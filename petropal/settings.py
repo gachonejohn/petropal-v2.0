@@ -270,7 +270,7 @@ REST_FRAMEWORK = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(min=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -315,6 +315,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",  # Django default
     "http://127.0.0.1:8000",  
     "http://localhost:8080",  # Vue default
+    "petropal-v2-0.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
