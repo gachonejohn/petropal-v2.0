@@ -17,7 +17,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG')
 
 ALLOWED_HOSTS = ['*']
 
@@ -143,7 +143,7 @@ CHANNEL_LAYERS = {
 
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),  # will use Render's DB URL
+        default=os.getenv("DATABASE_URL"),  # Render's DB URL
         conn_max_age=600,  # keeps connection alive
         ssl_require=True   # Render Postgres requires SSL
     )
