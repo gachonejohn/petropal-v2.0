@@ -120,7 +120,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     # Decode the token to get user information
                     decoded_token = jwt_decode(
                         token, 
-                        settings.SECRET_KEY, 
+                        settings.SIMPLE_JWT["SIGNING_KEY"], 
                         algorithms=["HS256"]
                     )
                     
