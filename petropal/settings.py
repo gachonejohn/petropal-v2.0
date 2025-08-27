@@ -277,7 +277,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.environ.get('JWT_SECRET_KEY', SECRET_KEY),
+    'SIGNING_KEY': os.getenv('JWT_SECRET_KEY'),
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
@@ -316,7 +316,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",  # Django default
     "http://127.0.0.1:8000",  
     "http://localhost:8080",  # Vue default
-    "petropal-v2-0.onrender.com",
+    "https://petropal-v2-0.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
