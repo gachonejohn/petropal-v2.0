@@ -254,7 +254,7 @@ REST_FRAMEWORK = {
         'user': '160/min'   # 60 requests per minute for authenticated users
     },
     
-    "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    # "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
 }
 
 
@@ -271,7 +271,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': "A0dFSAl74M6ybj6M16H9J9Gswoof-a19Ao7qFZH1VBc47MyUSVHg2x-yqzFWyIAKSXM7rJHWmkog6IDt4ND55g",
+    'SIGNING_KEY': 'A0dFSAl74M6ybj6M16H9J9Gswoof-a19Ao7qFZH1VBc47MyUSVHg2x-yqzFWyIAKSXM7rJHWmkog6IDt4ND55g',
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
@@ -365,7 +365,7 @@ LOGGING = {
             'level': 'INFO',
             'propagate': True,
         },
-        'your_auth_app': {  # Replace with your actual app name
+        'accounts': {  #app name
             'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': True,
