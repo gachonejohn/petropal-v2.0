@@ -60,7 +60,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
     'accounts.middleware.SecurityMiddleware',
-    'core.middleware.CustomResponseMiddleware',
+    # 'core.middleware.CustomResponseMiddleware',
 ]
 
 ROOT_URLCONF = 'petropal.urls'
