@@ -1,0 +1,56 @@
+# version: '3.9'
+
+services:
+  django:
+    build: .
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL at ${DB_HOST}:${DB_PORT}...' &&
+        for i in {1..30}; do
+          if mysqladmin ping -h ${DB_HOST} -P ${DB_PORT} --silent; then
+            echo 'MySQL is up!'
+            break
+          fi
+          echo 'Still waiting for MySQL... ($i)'
+          sleep 2
+        done &&
+        python manage.py migrate &&
+        daphne -b 0.0.0.0 -p 8000 petropal.asgi:application
+      "
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=petropal.settings
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:
