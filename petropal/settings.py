@@ -1,5 +1,5 @@
 import os 
-# import dj_database_url
+
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -17,7 +17,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 
@@ -31,7 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
+    
     'channels',
     'rest_framework',
     'rest_framework.authtoken',
@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
-    
 
     'accounts',
     'profiles',
@@ -48,9 +47,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    
     'corsheaders.middleware.CorsMiddleware',
-
+    
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -59,6 +60,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
     'accounts.middleware.SecurityMiddleware',
+    'core.middleware.CustomResponseMiddleware',
 ]
 
 ROOT_URLCONF = 'petropal.urls'
@@ -82,12 +84,32 @@ WSGI_APPLICATION = 'petropal.wsgi.application'
 
 ASGI_APPLICATION = 'petropal.asgi.application'
 
+
 # ======================
 # Redis + Channels Config
 # ======================
-# REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-# REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-# REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+import os
+
+# # Redis configuration
+# REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")  
+# REDIS_PORT = int(os.getenv("REDIS_PORT", 52621))
+# REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
+
+# #  Using Redis URL with password 
+# if REDIS_PASSWORD:
+#     REDIS_URL = f'redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0'
+# else:
+#     REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
+#         'CONFIG': {
+#             "hosts": [REDIS_URL],
+#         },
+#     },
+# }
+
 REDIS_URL = os.getenv("REDIS_URL")
 
 CHANNEL_LAYERS = {
@@ -98,19 +120,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
-
-# # ======================
-# # Cache using Redis
-# # ======================
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django_redis.cache.RedisCache",
-#         "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
-#         "OPTIONS": {
-#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-#         }
-#     }
-# }
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -124,12 +133,12 @@ CHANNEL_LAYERS = {
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
+        'ENGINE': 'django.db.backends.mysql',  
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT', '3306'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),  
+        'PORT': os.getenv('DB_PORT', '3306'), 
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             # 'ssl': {'ssl-ca': '/path/to/ca-cert.pem'}  # If online DB requires SSL
@@ -137,13 +146,7 @@ DATABASES = {
     }
 }
 
-# DATABASES = {
-#     'default': dj_database_url.config(
-#         default=os.getenv("DATABASE_URL"),  # Render's DB URL
-#         conn_max_age=600,  # keeps connection alive
-#         ssl_require=True   # Render Postgres requires SSL
-#     )
-# }
+
 
 # Email configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -198,16 +201,16 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
+# STATIC_URL = 'static/'
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # MEDIA_URL = '/media/'
 MEDIA_URL = 'https://www.ontapke.com/media/petropal_media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -236,13 +239,6 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
-
-    'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
-    ],
-
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 
@@ -256,7 +252,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/min',  # 10 requests per minute for anonymous users
         'user': '160/min'   # 60 requests per minute for authenticated users
-    }
+    },
+    
+    "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
 }
 
 
@@ -309,47 +307,17 @@ SIMPLE_JWT = {
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React default
+    "http://127.0.0.1.3000",
     "http://localhost:8000",  # Django default
     "http://127.0.0.1:8000",  
     "http://localhost:8080",  # Vue default
-    "https://petropal-v2-0.onrender.com",
+    
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://192.168.0.102:5000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
-
-
-# CORS settings for API requests
-CORS_ALLOWED_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
-
-
-# For development, disable CSRF for API endpoints
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    'https://petropal-v2-0.onrender.com',
-]
-
-
-# for development
-if DEBUG:
-    # Allow all origins during development
-    CORS_ALLOW_ALL_ORIGINS = True
-    
-    # Less strict CSRF settings for development
-    CSRF_COOKIE_SECURE = False
-    SESSION_COOKIE_SECURE = False
 
 # Session security
 SESSION_COOKIE_SECURE = True
@@ -397,10 +365,13 @@ LOGGING = {
             'level': 'INFO',
             'propagate': True,
         },
-        'accounts': {  
+        'your_auth_app': {  # Replace with your actual app name
             'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': True,
         },
     },
 }
+
+
+
