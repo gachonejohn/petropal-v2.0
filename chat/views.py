@@ -67,6 +67,8 @@ class ConversationDetailView(generics.RetrieveUpdateDestroyAPIView):
             user_deletions__user=self.request.user
         )
 
+
+
 class MessageListCreateView(generics.ListCreateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -99,11 +101,18 @@ class MessageListCreateView(generics.ListCreateAPIView):
         if 'reply_to' in self.request.data:
             reply_to = get_object_or_404(Message, message_id=self.request.data['reply_to'])
 
+        """ Handle file attachments and message types"""
+        attachment = self.request.FILES.get('attachment')
+        message_type = 'file' if attachment else self.request.data.get('message_type', 'text')    
+
         # Save message
         message = serializer.save(
             sender=self.request.user,
             conversation=conversation,
-            reply_to=reply_to
+            reply_to=reply_to,
+
+            attachment=attachment,
+            message_type=message_type
         )
 
         # Update conversation
@@ -115,7 +124,7 @@ class MessageListCreateView(generics.ListCreateAPIView):
         user_status.typing_started_at = None
         user_status.save()
 
-        # 🔥 Broadcast to WebSocket group
+        #  Broadcast to WebSocket group
         channel_layer = get_channel_layer()
         message_data = MessageSerializer(message, context={'request': self.request}).data
         
@@ -126,6 +135,7 @@ class MessageListCreateView(generics.ListCreateAPIView):
                 "message": serialize_datetime_objects(message_data)
             }
         )
+
 
 # Message detail view for editing and deleting
 class MessageDetailView(generics.RetrieveUpdateAPIView):

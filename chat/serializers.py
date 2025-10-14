@@ -49,23 +49,27 @@ class MessageSerializer(serializers.ModelSerializer):
     reaction_counts = serializers.SerializerMethodField()
     reply_to = serializers.SerializerMethodField()
     is_deleted_by_me = serializers.SerializerMethodField()
-    
-    # Add a write-only field for creating/editing messages
-    message_content = serializers.CharField(write_only=True)
+
+    message_content = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True
+    )
 
     class Meta:
         model = Message
-        fields = ['message_id', 'content', 'message_content', 'timestamp', 'message_type', 
-                 'attachment', 'sender', 'is_edited', 'edited_at', 
-                 'reactions', 'reaction_counts', 'reply_to', 'is_deleted_by_me']
+        fields = [
+            'message_id', 'content', 'message_content', 'timestamp', 'message_type',
+            'attachment', 'sender', 'is_edited', 'edited_at',
+            'reactions', 'reaction_counts', 'reply_to', 'is_deleted_by_me'
+        ]
         read_only_fields = ['message_id', 'timestamp', 'sender', 'is_edited', 'edited_at']
 
     def get_content(self, obj):
-        # Check if current user has deleted this message
         request = self.context.get('request')
         if request and request.user:
             if MessageDeletion.objects.filter(message=obj, user=request.user).exists():
-                return None  # Return None for deleted messages
+                return None
         return obj.get_decrypted_content()
 
     def get_is_deleted_by_me(self, obj):
@@ -74,14 +78,36 @@ class MessageSerializer(serializers.ModelSerializer):
             return MessageDeletion.objects.filter(message=obj, user=request.user).exists()
         return False
 
+
+    def validate(self, attrs):
+        message_type = attrs.get("message_type", "text")
+        content = attrs.get("message_content") or attrs.get("content")
+        attachment = attrs.get("attachment")
+
+        if message_type == "text":
+            if not content or not str(content).strip():
+                raise serializers.ValidationError({
+                    "message_content": "Text messages cannot be empty."
+                })
+
+        elif message_type == "file":
+            if not attachment:
+                raise serializers.ValidationError({
+                    "attachment": "File messages must include an attachment."
+                })
+            attrs["content"] = content or ""
+
+        else:
+            attrs["content"] = content or ""
+
+        return attrs
+
     def create(self, validated_data):
-        # Extract the actual content from message_content field
         content = validated_data.pop('message_content', validated_data.get('content', ''))
-        validated_data['content'] = content
+        validated_data['content'] = content or ""
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        # Handle content update for editing
         if 'message_content' in validated_data:
             content = validated_data.pop('message_content')
             validated_data['content'] = content
@@ -89,20 +115,16 @@ class MessageSerializer(serializers.ModelSerializer):
             validated_data['edited_at'] = timezone.now()
         return super().update(instance, validated_data)
 
-    # Get reaction counts for the message
     def get_reaction_counts(self, obj):
         reactions = obj.reactions.all()
         counts = {}
         for reaction in reactions:
             reaction_type = reaction.reaction
-            if reaction_type not in counts:
-                counts[reaction_type] = 0
-            counts[reaction_type] += 1
+            counts[reaction_type] = counts.get(reaction_type, 0) + 1
         return counts
 
     def get_reply_to(self, obj):
         if obj.reply_to:
-            # Check if the replied message is deleted by current user
             request = self.context.get('request')
             if request and request.user:
                 if MessageDeletion.objects.filter(message=obj.reply_to, user=request.user).exists():
@@ -111,7 +133,7 @@ class MessageSerializer(serializers.ModelSerializer):
                         'content': '[Message deleted]',
                         'sender': UserDisplaySerializer(obj.reply_to.sender).data
                     }
-            
+
             return {
                 'message_id': obj.reply_to.message_id,
                 'content': obj.reply_to.get_decrypted_content()[:100],

@@ -76,18 +76,17 @@ class Conversation(models.Model):
         except Exception as e:
             # If decryption fails, the message might not be encrypted
             return encrypted_message
+            
 
-# individual message
 class Message(models.Model):
     message_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_messages'
     )
-    content = models.TextField()  # This will store encrypted content
+    content = models.TextField(blank=True, null=True)  
     timestamp = models.DateTimeField(default=timezone.now)
     
-    # Message types
     MESSAGE_TYPES = [
         ('text', 'Text'),
         ('image', 'Image'),
@@ -97,13 +96,11 @@ class Message(models.Model):
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
     attachment = models.FileField(upload_to='message_attachments/', blank=True, null=True)
     
-    # Message status
     is_edited = models.BooleanField(default=False)
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
     
-    # Reply functionality
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
 
     class Meta:
@@ -114,17 +111,16 @@ class Message(models.Model):
         display_name = self.conversation.get_display_name(self.sender)
         return f"{display_name}: {self.get_decrypted_content()[:50]}"
 
-    # Get decrypted content for display
     def get_decrypted_content(self):
         return self.conversation.decrypt_message(self.content)
 
     def save(self, *args, **kwargs):
-        # Encrypt content before saving
         if self.content and not kwargs.pop('skip_encryption', False):
             original_content = self.content
             self.content = self.conversation.encrypt_message(self.content)
         
         super().save(*args, **kwargs)
+
 
 # Track read status of messages
 class MessageReadStatus(models.Model):

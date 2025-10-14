@@ -20,7 +20,6 @@ from datetime import datetime
 
 Account = get_user_model()
 
-# Custom JSON encoder to handle datetime serialization
 class DateTimeAwareJSONEncoder(DjangoJSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime):
@@ -29,45 +28,37 @@ class DateTimeAwareJSONEncoder(DjangoJSONEncoder):
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        # Get conversation ID from URL
         self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
         self.room_group_name = f"chat_{self.conversation_id}"
 
-        # Try to authenticate user from token in query params
         await self.authenticate_user()
 
-        # Verify user has access to this conversation
         if not hasattr(self, 'user') or not self.user or not self.user.is_authenticated:
-            await self.close(code=4001)  # Custom close code for authentication failure
+            await self.close(code=4001)  
             return
 
-        # Update scope with authenticated user
         self.scope["user"] = self.user
 
         has_access = await self.verify_conversation_access()
         if not has_access:
-            await self.close(code=4003)  # Custom close code for access denied
+            await self.close(code=4003)  
             return
 
-        # Join the group
         await self.channel_layer.group_add(
             self.room_group_name,
             self.channel_name
         )
         await self.accept()
 
-        # Mark user as online and broadcast status
         await self.set_user_status('online')
         await self.broadcast_status_change('online')
 
     async def disconnect(self, close_code):
-        # Leave the group
         await self.channel_layer.group_discard(
             self.room_group_name,
             self.channel_name
         )
         
-        # Clear typing status and mark user as offline
         if hasattr(self, 'user') and self.user and self.user.is_authenticated:
             await self.clear_typing_status()
             await self.set_user_status('offline')
@@ -99,56 +90,67 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send_error(f"Server error: {str(e)}")
 
-    # --------------------
-    # AUTHENTICATION
-    # --------------------
+ 
     @database_sync_to_async
-    # Authenticate user using JWT token from query parameters
     def authenticate_user(self):
         try:
-            # Get token from query parameters
             query_string = self.scope.get('query_string', b'').decode('utf-8')
             query_params = parse_qs(query_string)
             token = query_params.get('token', [None])[0]
             
             if token:
-                # Decode JWT token
                 try:
-                    # Validate the token
                     UntypedToken(token)
                     
-                    # Decode the token to get user information
                     decoded_token = jwt_decode(
                         token, 
-                        settings.SIMPLE_JWT["SIGNING_KEY"], 
+                        settings.SECRET_KEY, 
                         algorithms=["HS256"]
                     )
                     
                     user_id = decoded_token.get('user_id')
                     if user_id:
-                        self.user = Account.objects.get(acc_id=user_id)  # Using acc_id based on account model
+                        self.user = Account.objects.get(acc_id=user_id)  
                     else:
                         self.user = None
                         
                 except (InvalidToken, TokenError, Account.DoesNotExist):
                     self.user = None
             else:
-                # Check if user is already authenticated via session
                 self.user = self.scope.get("user")
                 
         except Exception as e:
             print(f"Authentication error: {e}")  # For debugging
             self.user = None
 
-    # --------------------
-    # HANDLERS
-    # --------------------
+   
+    # async def handle_chat_message(self, data):
+    #     if not hasattr(self, 'user') or not self.user or not self.user.is_authenticated:
+    #         await self.send_error("Authentication required")
+    #         return
+
     async def handle_chat_message(self, data):
-        if not hasattr(self, 'user') or not self.user or not self.user.is_authenticated:
-            await self.send_error("Authentication required")
+        message_content = data.get("message", "").strip()
+        attachment_url = data.get("attachment_url")
+        message_type = data.get("message_type", "text")
+
+        if message_type == "file" and attachment_url:
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "chat_message_broadcast",
+                    "message": {
+                        "message_content": "",
+                        "message_type": "file",
+                        "attachment": attachment_url,
+                        "sender": await self.get_user_data(),
+                        "timestamp": timezone.now().isoformat(),
+                    }
+                }
+            )
             return
             
-        message_content = data.get("message", "").strip()
+        # message_content = data.get("message", "").strip()
         if not message_content:
             await self.send_error("Message content cannot be empty")
             return
@@ -158,7 +160,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         message_type = data.get("message_type", "text")
 
         try:
-            # Save message to database
             message = await self.save_message(
                 message_content, 
                 reply_to_id, 
@@ -166,10 +167,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 message_type
             )
             
-            # Serialize the message for broadcasting
             serialized_message = await self.serialize_message(message)
 
-            # Broadcast to all users in the conversation
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -178,7 +177,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
-            # Clear typing status after sending message
             await self.clear_typing_status()
 
         except Exception as e:
@@ -197,13 +195,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            # Update message in database
             message = await self.edit_message(message_id, new_content)
             
-            # Serialize the message for broadcasting
             serialized_message = await self.serialize_message(message)
 
-            # Broadcast to all users in the conversation
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -227,10 +222,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            # Delete message for this user
             await self.delete_message_for_user(message_id)
 
-            # Broadcast deletion to all users in the conversation
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -257,10 +250,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         try:
-            # Toggle reaction in database
             action, reaction_data = await self.toggle_reaction(message_id, reaction)
 
-            # Broadcast reaction update to all users in the conversation
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -268,8 +259,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "message_id": message_id,
                     "reaction": reaction,
                     "user_data": await self.get_user_data(),
-                    "action": action,  # "added" or "removed"
-                    "reaction_data": reaction_data,  # Full reaction object if added
+                    "action": action,  
+                    "reaction_data": reaction_data,  
                     "timestamp": timezone.now().isoformat()
                 }
             )
@@ -309,7 +300,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         try:
             await self.set_typing_status(is_typing)
 
-            # Broadcast typing status to all users in the conversation
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -322,16 +312,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             await self.send_error(f"Failed to update typing status: {str(e)}")
 
-    # Handle ping for keeping connection alive
     async def handle_ping(self):
         await self.send(text_data=json.dumps({
             "type": "pong",
             "timestamp": timezone.now().isoformat()
         }, cls=DateTimeAwareJSONEncoder))
 
-    # --------------------
-    # BROADCASTERS
-    # --------------------
+
     async def chat_message_broadcast(self, event):
         await self.send(text_data=json.dumps({
             "type": "chat_message",
@@ -345,7 +332,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }, cls=DateTimeAwareJSONEncoder))
 
     async def message_deleted_broadcast(self, event):
-        # Only send to users who haven't deleted this message themselves
         message_id = event["message_id"]
         user_has_deleted = await self.user_has_deleted_message(message_id)
         
@@ -375,7 +361,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }, cls=DateTimeAwareJSONEncoder))
 
     async def read_receipt_broadcast(self, event):
-        # Don't send read receipts to the sender
         if hasattr(self, 'user') and self.user and event["user_data"]["acc_id"] != self.user.acc_id:
             await self.send(text_data=json.dumps({
                 "type": "read_receipt",
@@ -385,7 +370,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }, cls=DateTimeAwareJSONEncoder))
 
     async def user_typing_broadcast(self, event):
-        # Don't send typing events to the sender
         if hasattr(self, 'user') and self.user and event["user_data"]["acc_id"] != self.user.acc_id:
             await self.send(text_data=json.dumps({
                 "type": "user_typing",
@@ -395,7 +379,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }, cls=DateTimeAwareJSONEncoder))
 
     async def status_broadcast(self, event):
-        # Don't send status updates to the sender
         if hasattr(self, 'user') and self.user and event["user_data"]["acc_id"] != self.user.acc_id:
             await self.send(text_data=json.dumps({
                 "type": "user_status",
@@ -415,11 +398,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
-    # --------------------
-    # UTILITY METHODS
-    # --------------------
+  
 
-    # Send error message to the client
     async def send_error(self, message):
         await self.send(text_data=json.dumps({
             "type": "error",
@@ -432,21 +412,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Get serialized user data for broadcasting"""
         serializer = UserDisplaySerializer(self.user)
         data = serializer.data
-        # Convert any datetime objects to ISO strings
         return self.serialize_datetime_objects(data)
 
-    # --------------------
-    # DATABASE HELPERS
-    # --------------------
     @database_sync_to_async
-    # Verify if the user has access to the conversation
     def verify_conversation_access(self):
         try:
             conversation = Conversation.objects.get(
                 conversation_id=self.conversation_id,
                 participants=self.user
             )
-            # Also check if user hasn't deleted this conversation
             return not ConversationDeletion.objects.filter(
                 conversation=conversation,
                 user=self.user
@@ -455,7 +429,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return False
 
     @database_sync_to_async
-    # Save message to the database
     def save_message(self, content, reply_to_id=None, attachment=None, message_type="text"):
         conversation = get_object_or_404(
             Conversation, 
@@ -472,28 +445,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
         message = Message.objects.create(
             conversation=conversation,
             sender=self.user,
-            content=content,  # Will be encrypted in the model's save method
+            content=content,  
             message_type=message_type,
             attachment=attachment,
             reply_to=reply_to
         )
         
-        # Update conversation timestamp
         conversation.updated_at = timezone.now()
         conversation.save(update_fields=['updated_at'])
         
         return message
 
     @database_sync_to_async
-    # Edit a message
     def edit_message(self, message_id, new_content):
         message = get_object_or_404(
             Message, 
             message_id=message_id,
-            sender=self.user  # Only allow editing own messages
+            sender=self.user 
         )
         
-        message.content = new_content  # Will be encrypted in the model's save method
+        message.content = new_content 
         message.is_edited = True
         message.edited_at = timezone.now()
         message.save()
@@ -501,22 +472,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return message
 
     @database_sync_to_async
-    # Soft delete a message for the current user
     def delete_message_for_user(self, message_id):
         message = get_object_or_404(Message, message_id=message_id)
         
-        # Check if user is a participant in the conversation
         if not message.conversation.participants.filter(acc_id=self.user.acc_id).exists():
             raise Exception("You do not have permission to delete this message")
         
-        # Create or get deletion record
         MessageDeletion.objects.get_or_create(
             message=message,
             user=self.user
         )
 
     @database_sync_to_async
-    # Check if user has deleted a message
     def user_has_deleted_message(self, message_id):
         return MessageDeletion.objects.filter(
             message_id=message_id,
@@ -524,10 +491,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         ).exists()
 
     @database_sync_to_async
-    # Serialize message for broadcasting
     def serialize_message(self, message):
         from chat.serializers import MessageSerializer
-        # Create a mock request object for context
         class MockRequest:
             def __init__(self, user):
                 self.user = user
@@ -535,10 +500,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         mock_request = MockRequest(self.user)
         serializer = MessageSerializer(message, context={'request': mock_request})
         data = serializer.data
-        # Convert any datetime objects to ISO strings
         return self.serialize_datetime_objects(data)
         
-    # Recursively convert datetime objects to ISO strings for MessagePack compatibility
     def serialize_datetime_objects(self, obj):
         if isinstance(obj, dict):
             return {key: self.serialize_datetime_objects(value) for key, value in obj.items()}
@@ -546,13 +509,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return [self.serialize_datetime_objects(item) for item in obj]
         elif isinstance(obj, datetime):
             return obj.isoformat()
-        elif hasattr(obj, 'isoformat'):  # Handle other datetime-like objects
+        elif hasattr(obj, 'isoformat'):  
             return obj.isoformat()
         else:
             return obj
 
     @database_sync_to_async
-    # Toggle reaction for a message and return reaction data
     def toggle_reaction(self, message_id, reaction):
         try:
             message = Message.objects.get(message_id=message_id)
@@ -566,16 +528,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 reaction_obj.delete()
                 return "removed", None
             else:
-                # Serialize the reaction for broadcasting
                 serializer = MessageReactionSerializer(reaction_obj)
                 data = serializer.data
-                # Convert any datetime objects to ISO strings
                 return "added", self.serialize_datetime_objects(data)
         except Message.DoesNotExist:
             raise Exception("Message not found")
 
     @database_sync_to_async
-    # Mark a message as read
     def mark_message_read(self, message_id):
         try:
             message = Message.objects.get(message_id=message_id)
@@ -589,7 +548,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             raise Exception("Message not found")
 
     @database_sync_to_async
-    # Set user status (online/offline)
     def set_user_status(self, status):
         user_status, created = UserStatus.objects.get_or_create(
             user=self.user
@@ -599,7 +557,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         user_status.save(update_fields=["status", "last_seen"])
 
     @database_sync_to_async
-    # Set typing status for the user
     def set_typing_status(self, is_typing):
         conversation = Conversation.objects.get(conversation_id=self.conversation_id)
         user_status, created = UserStatus.objects.get_or_create(
@@ -616,7 +573,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         user_status.save(update_fields=["is_typing_in", "typing_started_at"])
 
     @database_sync_to_async
-    # Clear typing status for the user
     def clear_typing_status(self):
         try:
             user_status = UserStatus.objects.get(user=self.user)
@@ -627,7 +583,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             pass
 
     @database_sync_to_async
-    # Get the display name of the user
     def get_user_display_name(self):
         user = self.user
         if hasattr(user, 'profile') and user.profile.company_name:
