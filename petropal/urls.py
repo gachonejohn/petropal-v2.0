@@ -13,5 +13,6 @@ urlpatterns = [
     path('api/v1.2/', include('news_room.urls')),
     path('api/v1.3/', include('ad_events.urls')),
     path('api/v1.4/', include('report.urls')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+] 
+# + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

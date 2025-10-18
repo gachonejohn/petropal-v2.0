@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'channels',
     'rest_framework',
     'rest_framework.authtoken',
+    'storages',
 
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
@@ -48,7 +49,7 @@ INSTALLED_APPS = [
     'news_room',
     'ad_events',
     'report',
-]
+] 
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -206,11 +207,42 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
+
+# # MEDIA_URL = '/media/'
+# MEDIA_URL = 'https://www.ontapke.com/media/petropal_media/'
+# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# DEFAULT_FILE_STORAGE = 'chat.storage_backends.CPanelSFTPStorage'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "chat.storage_backends.CPanelSFTPStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# MEDIA_URL = '/media/'
-MEDIA_URL = 'https://www.ontapke.com/media/petropal_media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+SFTP_STORAGE_HOST = os.getenv('SFTP_HOST')
+SFTP_STORAGE_ROOT = os.getenv('REMOTE_MEDIA_ROOT')
+SFTP_STORAGE_PARAMS = {
+    'username': os.getenv('SFTP_USER'),
+    'password': os.getenv('SFTP_PASS'),
+    'port': int(os.getenv('SFTP_PORT', 22)),
+}
+SFTP_STORAGE_INTERACTIVE = False
+SFTP_STORAGE_FILE_MODE = 0o644
+SFTP_STORAGE_DIR_MODE = 0o755
+
+MEDIA_URL = 'https://ontapke.com/media/petropal_media/'
+MEDIA_ROOT = '/home/ontapke/petropal-main/media/petropal_media/'
+
+
+
+
 
 
 # Default primary key field type
@@ -271,8 +303,8 @@ REST_FRAMEWORK = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=14),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
@@ -312,15 +344,15 @@ SIMPLE_JWT = {
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React default
-    "http://localhost:8000",  # Django default
+    "http://localhost:3000",  
+    "http://localhost:8000",  
     "http://127.0.0.1:8000",  
-    "http://localhost:8080",  # Vue default
+    "http://localhost:8080",  
     "https://petropal-v2-0.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+CORS_ALLOW_ALL_ORIGINS = True  
 
 
 # CORS settings for API requests
@@ -408,6 +440,4 @@ LOGGING = {
         },
     },
 }
-
-
 

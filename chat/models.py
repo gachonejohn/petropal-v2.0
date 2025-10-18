@@ -8,7 +8,6 @@ import uuid
 
 # Account = get_user_model()
 
-# chat conversation between users
 class Conversation(models.Model):
     conversation_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     participants = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='conversations')
@@ -18,7 +17,6 @@ class Conversation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_conversations')
     
-    # Encryption key for this conversation
     encryption_key = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -27,7 +25,6 @@ class Conversation(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.encryption_key:
-            # Generate unique encryption key for this conversation
             self.encryption_key = Fernet.generate_key().decode()
         super().save(*args, **kwargs)
 
@@ -37,7 +34,6 @@ class Conversation(models.Model):
         participants_names = ", ".join([self.get_display_name(user) for user in self.participants.all()[:2]])
         return f"Conversation: {participants_names}"
 
-    # display name prioritize # company name, then full name, then email
     def get_display_name(self, user):
         if hasattr(user, 'profile') and user.profile.company_name:
             return user.profile.company_name
@@ -54,7 +50,6 @@ class Conversation(models.Model):
             return message
             
         if not self.encryption_key:
-            # Generate key if it doesn't exist
             self.encryption_key = Fernet.generate_key().decode()
             self.save(update_fields=['encryption_key'])
         
@@ -63,7 +58,7 @@ class Conversation(models.Model):
             encrypted = f.encrypt(message.encode()).decode()
             return encrypted
         except Exception as e:
-            return message  # Return original if encryption fails
+            return message  
 
     def decrypt_message(self, encrypted_message):
         if not self.encryption_key or not encrypted_message:
@@ -74,7 +69,6 @@ class Conversation(models.Model):
             decrypted = f.decrypt(encrypted_message.encode()).decode()
             return decrypted
         except Exception as e:
-            # If decryption fails, the message might not be encrypted
             return encrypted_message
             
 
@@ -122,7 +116,6 @@ class Message(models.Model):
         super().save(*args, **kwargs)
 
 
-# Track read status of messages
 class MessageReadStatus(models.Model):
     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='read_statuses')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -132,7 +125,6 @@ class MessageReadStatus(models.Model):
         unique_together = ['message', 'user']
         db_table = 'message_read_statuses'
 
-# User reactions to messages emojis
 class MessageReaction(models.Model):
     REACTION_CHOICES = [
         ('like', '👍'),
@@ -174,7 +166,6 @@ class UserStatus(models.Model):
         display_name = self.user.full_name or self.user.email
         return f"{display_name} - {self.status}"
 
-# Track user-specific message deletions (soft delete)
 class MessageDeletion(models.Model):
     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='user_deletions')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -184,7 +175,6 @@ class MessageDeletion(models.Model):
         unique_together = ['message', 'user']
         db_table = 'message_deletions'
 
-# Track user-specific conversation deletions (soft delete)
 class ConversationDeletion(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='user_deletions')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
