@@ -21,8 +21,9 @@ from datetime import datetime
 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+import mimetypes
+from utils.file_processor import FileProcessor
 
-# Helper function to serialize datetime objects for WebSocket compatibility
 def serialize_datetime_objects(obj):
     if isinstance(obj, dict):
         return {key: serialize_datetime_objects(value) for key, value in obj.items()}
@@ -39,7 +40,6 @@ class ConversationListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        # Exclude conversations that the user has deleted
         return Conversation.objects.filter(
             participants=self.request.user
         ).exclude(
@@ -81,7 +81,6 @@ class MessageListCreateView(generics.ListCreateAPIView):
             participants=self.request.user
         )
         
-        # Exclude messages that the user has deleted
         return Message.objects.filter(
             conversation=conversation,
             is_deleted=False
@@ -101,30 +100,53 @@ class MessageListCreateView(generics.ListCreateAPIView):
         if 'reply_to' in self.request.data:
             reply_to = get_object_or_404(Message, message_id=self.request.data['reply_to'])
 
-        """ Handle file attachments and message types"""
         attachment = self.request.FILES.get('attachment')
-        message_type = 'file' if attachment else self.request.data.get('message_type', 'text')    
+        original_file_size = 0
+        is_compressed = False
+        video_thumbnail = None
+        video_duration = None
+        file_name = ''
+        file_mime_type = ''
+        
+        if attachment:
+            file_type = FileProcessor.get_file_type(attachment.name)
+            message_type = file_type
+            original_file_size = attachment.size
+            file_name = attachment.name
+            file_mime_type = mimetypes.guess_type(attachment.name)[0] or 'application/octet-stream'
+            
+            if file_type == 'image':
+                attachment, is_compressed = FileProcessor.compress_image(attachment)
+            
+            elif file_type == 'video':
+                # video_thumbnail = FileProcessor.generate_video_thumbnail(attachment)
+                attachment, is_compressed = FileProcessor.compress_video(attachment)
+                
+        else:
+            message_type = self.request.data.get('message_type', 'text')
 
-        # Save message
         message = serializer.save(
             sender=self.request.user,
             conversation=conversation,
             reply_to=reply_to,
-
             attachment=attachment,
-            message_type=message_type
+            message_type=message_type,
+            file_name=file_name,
+            file_size=attachment.size if attachment else 0,
+            file_mime_type=file_mime_type,
+            is_compressed=is_compressed,
+            original_file_size=original_file_size,
+            # video_thumbnail=video_thumbnail,
+            # video_duration=video_duration
         )
 
-        # Update conversation
         conversation.save()
 
-        # Clear typing status
         user_status, _ = UserStatus.objects.get_or_create(user=self.request.user)
         user_status.is_typing_in = None
         user_status.typing_started_at = None
         user_status.save()
 
-        #  Broadcast to WebSocket group
         channel_layer = get_channel_layer()
         message_data = MessageSerializer(message, context={'request': self.request}).data
         
@@ -137,7 +159,6 @@ class MessageListCreateView(generics.ListCreateAPIView):
         )
 
 
-# Message detail view for editing and deleting
 class MessageDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -145,7 +166,7 @@ class MessageDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return Message.objects.filter(
-            sender=self.request.user,  # Only allow editing own messages
+            sender=self.request.user,  
             is_deleted=False
         ).exclude(
             user_deletions__user=self.request.user
@@ -159,7 +180,6 @@ class MessageDetailView(generics.RetrieveUpdateAPIView):
     def perform_update(self, serializer):
         message = serializer.save()
         
-        # Broadcast message edit to WebSocket group
         channel_layer = get_channel_layer()
         message_data = MessageSerializer(message, context={'request': self.request}).data
         
@@ -173,24 +193,20 @@ class MessageDetailView(generics.RetrieveUpdateAPIView):
 
 @api_view(['DELETE'])
 @permission_classes([permissions.IsAuthenticated])
-# Soft delete a message for the current user
 def delete_message(request, message_id):
    
     message = get_object_or_404(Message, message_id=message_id)
     
-    # Check if user is a participant in the conversation
     if not message.conversation.participants.filter(acc_id=request.user.acc_id).exists():
         return Response({'error': 'You do not have permission to delete this message'}, 
                        status=status.HTTP_403_FORBIDDEN)
     
-    # Create or get deletion record
     deletion, created = MessageDeletion.objects.get_or_create(
         message=message,
         user=request.user
     )
     
     if created:
-        # Broadcast message deletion to WebSocket group
         channel_layer = get_channel_layer()
         user_data = UserDisplaySerializer(request.user).data
         
@@ -210,7 +226,6 @@ def delete_message(request, message_id):
 
 @api_view(['DELETE'])
 @permission_classes([permissions.IsAuthenticated])
-# Soft delete a conversation for the current user only
 def delete_conversation(request, conversation_id):
 
     conversation = get_object_or_404(
@@ -219,7 +234,6 @@ def delete_conversation(request, conversation_id):
         participants=request.user
     )
     
-    # Create or get deletion record
     deletion, created = ConversationDeletion.objects.get_or_create(
         conversation=conversation,
         user=request.user
@@ -232,7 +246,6 @@ def delete_conversation(request, conversation_id):
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
-# Restore a deleted message for the current user
 def restore_message(request, message_id):
     message = get_object_or_404(Message, message_id=message_id)
     
@@ -240,7 +253,6 @@ def restore_message(request, message_id):
         deletion = MessageDeletion.objects.get(message=message, user=request.user)
         deletion.delete()
         
-        # Broadcast message restoration to WebSocket group
         channel_layer = get_channel_layer()
         message_data = MessageSerializer(message, context={'request': request}).data
         
@@ -259,7 +271,6 @@ def restore_message(request, message_id):
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
-# Restore a deleted conversation for the current user
 def restore_conversation(request, conversation_id):
     conversation = get_object_or_404(
         Conversation,
@@ -284,7 +295,6 @@ def mark_messages_read(request, conversation_id):
         participants=request.user
     )
     
-    # Get latest message that user hasn't deleted
     latest_message = conversation.messages.filter(
         is_deleted=False
     ).exclude(
@@ -292,14 +302,12 @@ def mark_messages_read(request, conversation_id):
     ).first()
     
     if latest_message:
-        # Create or update read status
         MessageReadStatus.objects.update_or_create(
             user=request.user,
             message=latest_message,
             defaults={'read_at': timezone.now()}
         )
         
-        # 🔥 Broadcast read receipt to WebSocket group
         channel_layer = get_channel_layer()
         user_data = UserDisplaySerializer(request.user).data
         
@@ -345,7 +353,6 @@ def add_reaction(request, message_id):
     if reaction_type not in dict(MessageReaction.REACTION_CHOICES):
         return Response({'error': 'Invalid reaction'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # Toggle reaction
     reaction, created = MessageReaction.objects.get_or_create(
         message=message,
         user=request.user,
@@ -362,7 +369,6 @@ def add_reaction(request, message_id):
         reaction_data = MessageReactionSerializer(reaction).data
         reaction_data = serialize_datetime_objects(reaction_data)
     
-    # 🔥 Broadcast reaction to WebSocket group
     channel_layer = get_channel_layer()
     user_data = UserDisplaySerializer(request.user).data
     
@@ -406,7 +412,6 @@ def set_typing_status(request, conversation_id):
     
     user_status.save()
     
-    # 🔥 Broadcast typing status to WebSocket group
     channel_layer = get_channel_layer()
     user_data = UserDisplaySerializer(request.user).data
     
@@ -432,11 +437,9 @@ def update_user_status(request):
     user_status.last_seen = timezone.now()
     user_status.save()
     
-    # 🔥 Broadcast status change to all conversations the user is part of
     channel_layer = get_channel_layer()
     user_data = UserDisplaySerializer(request.user).data
     
-    # Get all conversations the user is part of (excluding deleted ones)
     conversations = Conversation.objects.filter(
         participants=request.user
     ).exclude(

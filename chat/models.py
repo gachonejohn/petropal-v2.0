@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 import json
 import uuid
+from django.core.validators import FileExtensionValidator
 
 # Account = get_user_model()
 
@@ -85,11 +86,19 @@ class Message(models.Model):
         ('text', 'Text'),
         ('image', 'Image'),
         ('file', 'File'),
+        ('video', 'Video'),
         ('system', 'System'),  # For typing indicators, user joined, etc.
     ]
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
-    attachment = models.FileField(upload_to='message_attachments/', blank=True, null=True)
+    attachment = models.FileField(upload_to='message_attachments/', blank=True, null=True,
+    validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'pdf', 'doc', 'docx', 'txt', 'xlsx', 'csv'])])
     
+    file_name = models.CharField(max_length=255, blank=True)
+    file_size = models.BigIntegerField(default=0)  
+    file_mime_type = models.CharField(max_length=100, blank=True)
+    is_compressed = models.BooleanField(default=False)
+    original_file_size = models.BigIntegerField(default=0)
+
     is_edited = models.BooleanField(default=False)
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)

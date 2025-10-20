@@ -1,12 +1,10 @@
-# profile imports
 from rest_framework import serializers
 from accounts.models import Account
 from profiles.models import UserProfile, Follow, Rating, Badge
 from django.db import models
+from shared.tz_mixins import BaseModelSerializer
 
-
-# verification badge serializer
-class BadgeSerializer(serializers.ModelSerializer):
+class BadgeSerializer(BaseModelSerializer):
     image_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -20,36 +18,43 @@ class BadgeSerializer(serializers.ModelSerializer):
         return None
 
 # profile serializers
-class UserProfileSerializer(serializers.ModelSerializer):
-    badge = BadgeSerializer(read_only=True)  # Use nested serializer
+class UserProfileSerializer(BaseModelSerializer):
     class Meta:
         model = UserProfile
         fields = '__all__'
         read_only_fields = ('profile_id', 'user', 'created_at', 'updated_at')
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.badge:
+            badge_serializer = BadgeSerializer(instance.badge, context=self.context)
+            data['badge'] = badge_serializer.data
+        return data
 
-class AccountProfileSerializer(serializers.ModelSerializer):
+
+
+class AccountProfileSerializer(BaseModelSerializer):
     profile = UserProfileSerializer(read_only=True)
     followers_count = serializers.SerializerMethodField()
     following_count = serializers.SerializerMethodField()
     ratings_count = serializers.SerializerMethodField()
     average_rating = serializers.SerializerMethodField()
+    has_recent_post = serializers.BooleanField(read_only=True) 
     
     class Meta:
         model = Account
         fields = [
             'acc_id', 'email', 'full_name', 'phone', 'is_verified', 
             'created_at', 'updated_at', 'profile', 'followers_count',
-            'following_count', 'ratings_count', 'average_rating'
+            'following_count', 'ratings_count', 'average_rating',
+            'has_recent_post'
         ]
         read_only_fields = ('acc_id', 'email', 'created_at', 'updated_at', 'is_verified')
     
     def to_representation(self, instance):
         data = super().to_representation(instance)
         
-        # Ensure profile exists
         if not hasattr(instance, 'profile') or instance.profile is None:
-            # Create default profile representation
             data['profile'] = {
                 'profile_id': None,
                 'user': str(instance.acc_id),
@@ -63,11 +68,14 @@ class AccountProfileSerializer(serializers.ModelSerializer):
                 'interest': [],
                 'language_preference': 'en',
                 'is_omc': False,
-                'verification_badge': None,
+                'badge': None,  
                 'verification_documents': [],
                 'created_at': instance.created_at.isoformat(),
                 'updated_at': instance.updated_at.isoformat(),
             }
+        else:
+            profile_serializer = UserProfileSerializer(instance.profile, context=self.context)
+            data['profile'] = profile_serializer.data
         
         return data
     
@@ -86,7 +94,7 @@ class AccountProfileSerializer(serializers.ModelSerializer):
             return round(ratings.aggregate(avg=models.Avg('rating_count'))['avg'], 1)
         return 0.0
 
-class ProfileUpdateSerializer(serializers.ModelSerializer):
+class ProfileUpdateSerializer(BaseModelSerializer):
     company_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
     company_logo_url = serializers.URLField(required=False, allow_blank=True)
     about_bio = serializers.CharField(required=False, allow_blank=True, max_length=1000)
@@ -112,7 +120,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Maximum 10 interests allowed")
         return value
 
-class FollowSerializer(serializers.ModelSerializer):
+class FollowSerializer(BaseModelSerializer):
     follower_info = AccountProfileSerializer(source='follower', read_only=True)
     following_info = AccountProfileSerializer(source='following', read_only=True)
     
@@ -120,7 +128,7 @@ class FollowSerializer(serializers.ModelSerializer):
         model = Follow
         fields = ['follow_id', 'follower_info', 'following_info', 'created_at']
 
-class RatingSerializer(serializers.ModelSerializer):
+class RatingSerializer(BaseModelSerializer):
     rater_info = AccountProfileSerializer(source='rater', read_only=True)
     
     class Meta:
@@ -132,7 +140,7 @@ class RatingSerializer(serializers.ModelSerializer):
 
 
 
-class RatingCreateSerializer(serializers.ModelSerializer):
+class RatingCreateSerializer(BaseModelSerializer):
     class Meta:
         model = Rating
         fields = ['rated', 'rating_count', 'review_content']

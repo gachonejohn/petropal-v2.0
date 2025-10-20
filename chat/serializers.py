@@ -5,6 +5,8 @@ from chat.models import (
 )
 from accounts.models import Account
 from django.utils import timezone
+from utils.file_processor import FileProcessor
+from django.core.exceptions import ValidationError
 
 class UserDisplaySerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
@@ -49,7 +51,10 @@ class MessageSerializer(serializers.ModelSerializer):
     reaction_counts = serializers.SerializerMethodField()
     reply_to = serializers.SerializerMethodField()
     is_deleted_by_me = serializers.SerializerMethodField()
-
+    
+    # attachment_url = serializers.SerializerMethodField()
+    attachment_type = serializers.SerializerMethodField()
+    
     message_content = serializers.CharField(
         write_only=True,
         required=False,
@@ -60,11 +65,30 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = [
             'message_id', 'content', 'message_content', 'timestamp', 'message_type',
-            'attachment', 'sender', 'is_edited', 'edited_at',
+            'attachment', 'attachment_type', 'file_name', 
+            'file_size', 'file_mime_type', 'is_compressed', 
+            'sender', 'is_edited', 'edited_at',
             'reactions', 'reaction_counts', 'reply_to', 'is_deleted_by_me'
         ]
-        read_only_fields = ['message_id', 'timestamp', 'sender', 'is_edited', 'edited_at']
+        read_only_fields = [
+            'message_id', 'timestamp', 'sender', 'is_edited', 'edited_at',
+            'file_size', 'file_mime_type', 'is_compressed', 'video_duration'
+        ]
 
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+
+        hidden_fields = ['file_name', 'file_size', 'file_mime_type', 'attachment_type', 'is_compressed',]
+        for field in hidden_fields:
+            rep.pop(field, None)
+        return rep    
+               
+    
+    def get_attachment_type(self, obj):
+        if obj.file_name:
+            return FileProcessor.get_file_type(obj.file_name)
+        return None
+    
     def get_content(self, obj):
         request = self.context.get('request')
         if request and request.user:
@@ -78,11 +102,10 @@ class MessageSerializer(serializers.ModelSerializer):
             return MessageDeletion.objects.filter(message=obj, user=request.user).exists()
         return False
 
-
     def validate(self, attrs):
         message_type = attrs.get("message_type", "text")
         content = attrs.get("message_content") or attrs.get("content")
-        attachment = attrs.get("attachment")
+        attachment = self.context['request'].FILES.get('attachment') if self.context.get('request') else None
 
         if message_type == "text":
             if not content or not str(content).strip():
@@ -90,30 +113,29 @@ class MessageSerializer(serializers.ModelSerializer):
                     "message_content": "Text messages cannot be empty."
                 })
 
-        elif message_type == "file":
+        elif message_type in ["image", "video", "file"]:
             if not attachment:
                 raise serializers.ValidationError({
-                    "attachment": "File messages must include an attachment."
+                    "attachment": f"{message_type.capitalize()} messages must include an attachment."
                 })
+            
+            file_type = FileProcessor.get_file_type(attachment.name)
+            if file_type != message_type:
+                raise serializers.ValidationError({
+                    "attachment": f"File type does not match message type '{message_type}'."
+                })
+            
+            try:
+                FileProcessor.validate_file_size(attachment, message_type)
+            except ValidationError as e:
+                raise serializers.ValidationError({"attachment": str(e)})
+            
             attrs["content"] = content or ""
 
         else:
             attrs["content"] = content or ""
 
         return attrs
-
-    def create(self, validated_data):
-        content = validated_data.pop('message_content', validated_data.get('content', ''))
-        validated_data['content'] = content or ""
-        return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        if 'message_content' in validated_data:
-            content = validated_data.pop('message_content')
-            validated_data['content'] = content
-            validated_data['is_edited'] = True
-            validated_data['edited_at'] = timezone.now()
-        return super().update(instance, validated_data)
 
     def get_reaction_counts(self, obj):
         reactions = obj.reactions.all()
@@ -137,10 +159,10 @@ class MessageSerializer(serializers.ModelSerializer):
             return {
                 'message_id': obj.reply_to.message_id,
                 'content': obj.reply_to.get_decrypted_content()[:100],
-                'sender': UserDisplaySerializer(obj.reply_to.sender).data
+                'sender': UserDisplaySerializer(obj.reply_to.sender).data,
+                'message_type': obj.reply_to.message_type
             }
         return None
-
 class ConversationSerializer(serializers.ModelSerializer):
     participants = UserDisplaySerializer(many=True, read_only=True)
     last_message = serializers.SerializerMethodField()

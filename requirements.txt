@@ -27,6 +27,8 @@ django-redis==6.0.0
 django-storages==1.14.6
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
+ffmpeg-python==0.2.0
+future==1.0.0
 hyperlink==21.0.0
 idna==3.10
 incremental==24.7.2

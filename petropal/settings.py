@@ -43,12 +43,9 @@ INSTALLED_APPS = [
     
 
     'accounts',
+    'shared',
     'profiles',
-    'posts',
     'chat',
-    'news_room',
-    'ad_events',
-    'report',
 ] 
 
 MIDDLEWARE = [
@@ -241,7 +238,20 @@ MEDIA_URL = 'https://ontapke.com/media/petropal_media/'
 MEDIA_ROOT = '/home/ontapke/petropal-main/media/petropal_media/'
 
 
+# File upload settings --- message attachments
+MAX_FILE_SIZE = 50 * 1024 * 1024      # 50MB default max file size
+MAX_IMAGE_SIZE = 10 * 1024 * 1024     # 10MB 
+MAX_VIDEO_SIZE = 60 * 1024 * 1024     # 60MB 
+MAX_DOCUMENT_SIZE = 25 * 1024 * 1024  # 25MB 
 
+ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
+ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.xlsx', '.csv']
+
+COMPRESS_IMAGES = True
+COMPRESS_VIDEOS = True
+IMAGE_QUALITY = 85  # JPEG quality (1-100)
+VIDEO_CRF = 28  # Video compression factor (18-28 recommended, lower = better quality)
 
 
 

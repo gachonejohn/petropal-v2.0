@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q, Avg
 from django.db import transaction
 from accounts.models import Account 
-from profiles.models import UserProfile, Follow, Rating
+from profiles.models import UserProfile, Follow, Rating, ProfileVisit
 from profiles.serializers import (
     AccountProfileSerializer, ProfileUpdateSerializer, FollowSerializer,
     RatingSerializer, RatingCreateSerializer
@@ -16,23 +16,51 @@ from rest_framework import serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import PermissionDenied
 
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Exists, OuterRef
+# from posts.models import Post  
+
+from profiles.pagination import FeaturedUsersPagination
+from utils.get_client import get_client_ip, get_user_agent
 
 from django.contrib.auth import get_user_model    
 Account = get_user_model()
 
-# # get profile details
-# class ProfileDetailView(generics.RetrieveAPIView):
-#     serializer_class = AccountProfileSerializer
-#     permission_classes = [IsAuthenticated]
-    
-#     def get_object(self):
-#         # Get profile by acc_id or current user
-#         acc_id = self.kwargs.get('acc_id')
-#         if acc_id:
-#             return get_object_or_404(Account, acc_id=acc_id)
-#         return self.request.user
 
-# get profile details
+def track_profile_visit(request, profile_owner):
+    try:
+        if request.user.is_authenticated and profile_owner == request.user:
+            return
+        
+        visitor = request.user if request.user.is_authenticated else None
+        visitor_ip = get_client_ip(request)
+        
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        recent_visit_filter = Q(
+            profile_owner=profile_owner,
+            created_at__gte=thirty_days_ago
+        )
+        
+        if visitor:
+            recent_visit_filter &= Q(visitor=visitor)
+        else:
+            recent_visit_filter &= Q(visitor_ip=visitor_ip, visitor=None)
+        
+        if ProfileVisit.objects.filter(recent_visit_filter).exists():
+            return
+        
+        ProfileVisit.objects.create(
+            profile_owner=profile_owner,
+            visitor=visitor,
+            visitor_ip=visitor_ip
+        )
+        
+    except Exception:
+        pass
+
+
+
 class ProfileDetailView(generics.RetrieveAPIView):
     serializer_class = AccountProfileSerializer
     permission_classes = [AllowAny]  # allow anonymous access
@@ -42,7 +70,12 @@ class ProfileDetailView(generics.RetrieveAPIView):
 
         if acc_id:
             # Anyone can fetch a profile by acc_id (for posts)
-            return get_object_or_404(Account, acc_id=acc_id)
+            profile_user = get_object_or_404(Account, acc_id=acc_id)
+            
+            # Track the profile visit
+            track_profile_visit(self.request, profile_user)
+            
+            return profile_user
 
         # If no acc_id, return current user's profile (auth only)
         if self.request.user.is_authenticated:
@@ -228,52 +261,42 @@ def upload_profile_assets(request):
         'background_picture_url': request.build_absolute_uri(profile.background_picture.url) if profile.background_picture else None
     }, status=status.HTTP_200_OK)
 
-# Search users by name, email, or company
-# @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
-# def search_users(request):
-#     query = request.GET.get('q', '')
-    
-#     if not query:
-#         return Response(
-#             {'error': 'Search query is required'},
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-    
-#     users = Account.objects.filter(
-#         Q(full_name__icontains=query) |
-#         Q(email__icontains=query) |
-#         Q(profile__company_name__icontains=query),
-#         is_verified=True,
-#         state=1  # Active users only
-#     ).select_related('profile')[:20]
-    
-#     serializer = AccountProfileSerializer(users, many=True)
-#     return Response(serializer.data)
 
-# return all users
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def featured_users(request):
-    try:
-        # Get all active, verified users excluding current user and admin/staff/superuser
-        users = Account.objects.filter(
-            is_verified=True,
-            state=1,  # Active users only
-            is_staff=False,  # Exclude staff users
-            is_superuser=False  # Exclude superuser
-        )
-        # If authenticated, exclude current user
-        if request.user.is_authenticated:
-            users = users.exclude(acc_id=request.user.acc_id)
+
+# @api_view(['GET'])
+# @permission_classes([AllowAny])
+# def featured_users(request):
+#     try:
+#         twenty_four_hours_ago = timezone.now() - timedelta(hours=24)
         
-        serializer = AccountProfileSerializer(users, many=True)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response(
-            {'error': 'Failed to load users. Please try again.'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+#         # Annotate users with has_recent_post flag at database level
+#         users = Account.objects.filter(
+#             is_verified=True,
+#             state=1,  # Active users only
+#             is_staff=False,  # Exclude staff users
+#             is_superuser=False  # Exclude superuser
+#         ).select_related('profile__badge').annotate(
+#             has_recent_post=Exists(
+#                 Post.objects.filter(
+#                     user=OuterRef('pk'),
+#                     created_at__gte=twenty_four_hours_ago,
+#                     is_active=True
+#                 )
+#             )
+#         )
+        
+#         # If authenticated, exclude current user
+#         if request.user.is_authenticated:
+#             users = users.exclude(acc_id=request.user.acc_id)
+        
+#         serializer = AccountProfileSerializer(users, many=True, context={'request': request})
+#         return Response(serializer.data)
+#     except Exception as e:
+#         return Response(
+#             {'error': 'Failed to load users. Please try again.'},
+#             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#         )
+
 
 # search users by name, email, or company
 @api_view(['GET'])
@@ -317,3 +340,49 @@ def search_users(request):
 
 
 
+# manage timezone endpoints
+from rest_framework.decorators import api_view, permission_classes
+import pytz
+
+@api_view(['GET'])
+def timezone_choices(request):
+    """Get available timezone choices"""
+    choices = [
+        {'value': tz, 'label': tz.replace('_', ' ')}
+        for tz in pytz.common_timezones
+    ]
+    return Response(choices)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_user_timezone(request):
+    """Update user's timezone"""
+    timezone_name = request.data.get('timezone')
+    
+    if not timezone_name or timezone_name not in pytz.all_timezones:
+        return Response(
+            {'error': 'Invalid timezone'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    request.user.timezone = timezone_name
+    request.user.save(update_fields=['timezone'])
+    
+    return Response({
+        'message': 'Timezone updated successfully',
+        'timezone': timezone_name
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_timezone_info(request):
+    """Get user's current timezone info view"""
+    user_tz = pytz.timezone(request.user.profile.timezone)
+    now = timezone.now().astimezone(user_tz)
+    
+    return Response({
+        'timezone': request.user.profile.timezone,
+        'current_time': now.strftime('%Y-%m-%d %H:%M:%S'),
+        'utc_offset': now.strftime('%z'),
+        'timezone_name': now.strftime('%Z')
+    })

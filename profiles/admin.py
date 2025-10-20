@@ -1,10 +1,10 @@
 from django.contrib import admin
 
 from django.utils.html import format_html
-from .models import UserProfile, Follow, Rating, Badge
+from .models import UserProfile, Follow, Rating, Badge, ProfileVisit
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'company_name', 'location', 'country', 'city', 'is_omc', 'created_at', 'updated_at')
+    list_display = ('user', 'company_name', 'location', 'country', 'city', 'is_omc', 'timezone', 'created_at', 'updated_at')
     search_fields = ('user__email', 'company_name', 'location', 'country', 'city')
     list_filter = ('is_omc', 'created_at')
     readonly_fields = ('profile_id', 'created_at', 'updated_at')
@@ -40,3 +40,15 @@ class BadgeAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" width="50" />', obj.icon.url)
         return "-"
     badge_preview.short_description = "Badge Image"
+
+
+
+@admin.register(ProfileVisit)
+class ProfileVisitAdmin(admin.ModelAdmin):
+    list_display = ('profile_owner', 'visitor', 'visitor_ip', 'created_at')
+    search_fields = ('profile_owner__email', 'visitor__email', 'visitor_ip')
+    list_filter = ('created_at',)
+    readonly_fields = ('visit_id', 'profile_owner', 'visitor', 'visitor_ip', 'created_at')
+    
+    def has_add_permission(self, request):
+        return False
