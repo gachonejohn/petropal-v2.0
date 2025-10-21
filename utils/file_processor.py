@@ -38,9 +38,9 @@ class FileProcessor:
         elif ext in settings.ALLOWED_VIDEO_EXTENSIONS:
             return 'video'
         elif ext in settings.ALLOWED_DOCUMENT_EXTENSIONS:
-            return 'document'
-        else:
             return 'file'
+        else:
+            return 'document'
     
     @staticmethod
     def compress_image(image_file):
