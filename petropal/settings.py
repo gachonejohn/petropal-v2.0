@@ -243,10 +243,12 @@ MAX_FILE_SIZE = 50 * 1024 * 1024      # 50MB default max file size
 MAX_IMAGE_SIZE = 10 * 1024 * 1024     # 10MB 
 MAX_VIDEO_SIZE = 60 * 1024 * 1024     # 60MB 
 MAX_DOCUMENT_SIZE = 25 * 1024 * 1024  # 25MB 
+MAX_AUDIO_SIZE = 20 * 1024 * 1024     # 20MB
 
 ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
 ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
 ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.xlsx', '.csv']
+ALLOWED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.aac']
 
 COMPRESS_IMAGES = True
 COMPRESS_VIDEOS = True

@@ -87,11 +87,12 @@ class Message(models.Model):
         ('image', 'Image'),
         ('file', 'File'),
         ('video', 'Video'),
+        ('audio', 'Audio'),
         ('system', 'System'),  # For typing indicators, user joined, etc.
     ]
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
     attachment = models.FileField(upload_to='message_attachments/', blank=True, null=True,
-    validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'pdf', 'doc', 'docx', 'txt', 'xlsx', 'csv'])])
+    validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'pdf', 'doc', 'docx', 'txt', 'xlsx', 'csv', 'mp3', 'wav', 'aac'])])
     
     file_name = models.CharField(max_length=255, blank=True)
     file_size = models.BigIntegerField(default=0)  

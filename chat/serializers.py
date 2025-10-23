@@ -113,7 +113,7 @@ class MessageSerializer(serializers.ModelSerializer):
                     "message_content": "Text messages cannot be empty."
                 })
 
-        elif message_type in ["image", "video", "file"]:
+        elif message_type in ["image", "video", "file", "audio"]:
             if not attachment:
                 raise serializers.ValidationError({
                     "attachment": f"{message_type.capitalize()} messages must include an attachment."

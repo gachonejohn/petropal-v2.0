@@ -16,6 +16,8 @@ class FileProcessor:
         size_limits = {
             'image': settings.MAX_IMAGE_SIZE,
             'video': settings.MAX_VIDEO_SIZE,
+            'audio': settings.MAX_AUDIO_SIZE,
+            'file': settings.MAX_DOCUMENT_SIZE,
             'document': settings.MAX_DOCUMENT_SIZE,
         }
         
@@ -39,6 +41,8 @@ class FileProcessor:
             return 'video'
         elif ext in settings.ALLOWED_DOCUMENT_EXTENSIONS:
             return 'file'
+        elif ext in settings.ALLOWED_AUDIO_EXTENSIONS:
+            return 'audio'
         else:
             return 'document'
     
