@@ -17,24 +17,31 @@ from chat.serializers import (
     MessageEditSerializer
 )
 from accounts.models import Account
-from datetime import datetime
+from datetime import datetime, date
 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import mimetypes
 from utils.file_processor import FileProcessor
+from uuid import UUID
+from decimal import Decimal
 
 def serialize_datetime_objects(obj):
     if isinstance(obj, dict):
         return {key: serialize_datetime_objects(value) for key, value in obj.items()}
     elif isinstance(obj, list):
         return [serialize_datetime_objects(item) for item in obj]
-    elif isinstance(obj, datetime):
+    elif isinstance(obj, (datetime, date)):
         return obj.isoformat()
-    elif hasattr(obj, 'isoformat'):  # Handle other datetime-like objects
+    elif isinstance(obj, UUID):
+        return str(obj)
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    elif hasattr(obj, 'isoformat'):  
         return obj.isoformat()
     else:
         return obj
+
 
 class ConversationListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]

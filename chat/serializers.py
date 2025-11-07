@@ -52,7 +52,6 @@ class MessageSerializer(serializers.ModelSerializer):
     reply_to = serializers.SerializerMethodField()
     is_deleted_by_me = serializers.SerializerMethodField()
     
-    # attachment_url = serializers.SerializerMethodField()
     attachment_type = serializers.SerializerMethodField()
     
     message_content = serializers.CharField(
@@ -77,12 +76,10 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-
-        hidden_fields = ['file_name', 'file_size', 'file_mime_type', 'attachment_type', 'is_compressed',]
+        hidden_fields = ['file_name', 'file_size', 'file_mime_type', 'attachment_type', 'is_compressed']
         for field in hidden_fields:
             rep.pop(field, None)
         return rep    
-               
     
     def get_attachment_type(self, obj):
         if obj.file_name:
@@ -137,6 +134,14 @@ class MessageSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def create(self, validated_data):
+        message_content = validated_data.pop('message_content', None)
+        
+        if message_content and not validated_data.get('content'):
+            validated_data['content'] = message_content
+        
+        return super().create(validated_data)
+
     def get_reaction_counts(self, obj):
         reactions = obj.reactions.all()
         counts = {}
@@ -159,6 +164,8 @@ class MessageSerializer(serializers.ModelSerializer):
             return {
                 'message_id': obj.reply_to.message_id,
                 'content': obj.reply_to.get_decrypted_content()[:100],
+                'attachment_type': self.get_attachment_type(obj.reply_to),
+                'attachment': obj.reply_to.attachment.url if obj.reply_to.attachment else None,
                 'sender': UserDisplaySerializer(obj.reply_to.sender).data,
                 'message_type': obj.reply_to.message_type
             }

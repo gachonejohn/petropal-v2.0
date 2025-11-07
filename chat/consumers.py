@@ -16,7 +16,10 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from jwt import decode as jwt_decode
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
-from datetime import datetime
+from datetime import datetime, date
+from uuid import UUID
+from decimal import Decimal
+
 
 Account = get_user_model()
 
@@ -507,8 +510,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return {key: self.serialize_datetime_objects(value) for key, value in obj.items()}
         elif isinstance(obj, list):
             return [self.serialize_datetime_objects(item) for item in obj]
-        elif isinstance(obj, datetime):
+        elif isinstance(obj, (datetime, date)):
             return obj.isoformat()
+        elif isinstance(obj, UUID):
+            return str(obj)
+        elif isinstance(obj, Decimal):
+            return float(obj)
         elif hasattr(obj, 'isoformat'):  
             return obj.isoformat()
         else:
